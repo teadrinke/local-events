@@ -25,6 +25,7 @@ class Event(BaseModel):
     venue_lat: float | None = None
     venue_lon: float | None = None
     starts_at: AwareDatetime
+    time_tbd: bool = False  # source gave a date with no time component
     ticket_url: str | None = None
     price_min: float | None = None
     price_max: float | None = None

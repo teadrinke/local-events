@@ -132,6 +132,7 @@ class JamBaseProvider(EventProvider):
             venue_lat=geo.get("latitude"),
             venue_lon=geo.get("longitude"),
             starts_at=self._starts_at(raw["startDate"], address["x-timezone"]),
+            time_tbd=self._is_date_only(raw["startDate"]),
             ticket_url=offer.get("url") if offer else None,
             price_min=self._as_float(price.get("minPrice")),
             price_max=self._as_float(price.get("maxPrice")),
@@ -171,6 +172,12 @@ class JamBaseProvider(EventProvider):
             if seller and url:
                 ids.setdefault(str(seller), str(url))
         return ids
+
+    @staticmethod
+    def _is_date_only(start_date: str) -> bool:
+        # Some events carry a bare "2026-08-22" with no time component. The
+        # resulting midnight is not a real door time, so callers can say so.
+        return "T" not in start_date
 
     @staticmethod
     def _starts_at(start_date: str, tz_name: str) -> datetime:

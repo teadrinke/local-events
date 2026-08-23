@@ -253,7 +253,9 @@
 
     var meta = document.createElement("div");
     meta.className = "meta";
-    meta.appendChild(span("time", formatTime(start)));
+    // A date-only source record lands on midnight, which is not a real door
+    // time; the API flags those so we can say so instead of showing 12:00 AM.
+    meta.appendChild(span("time", event.time_tbd ? "Time TBA" : formatTime(start)));
 
     if (typeof event.distance_mi === "number") {
       meta.appendChild(span("", event.distance_mi.toFixed(1) + " mi away"));
