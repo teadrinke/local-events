@@ -40,6 +40,17 @@ class JamBaseProvider(EventProvider):
 
         events: list[Event] = []
         for raw in payload.get("events") or []:
+            # Product decision, not a data limitation: cancelled and postponed
+            # shows are dropped rather than surfaced. A stricter version would
+            # keep them and carry the status through for a badge in the UI.
+            status = (raw or {}).get("eventStatus")
+            if status != "scheduled":
+                logger.debug(
+                    "skipping non-scheduled jambase event %s (status=%s)",
+                    (raw or {}).get("identifier", "<no identifier>"),
+                    status,
+                )
+                continue
             try:
                 events.append(self._to_event(raw))
             except Exception as exc:

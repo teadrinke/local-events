@@ -241,8 +241,9 @@
 
     el.appendChild(line("title", event.title));
 
-    // Only adds information when it is not already spelled out in the title.
-    if (event.artist && event.artist !== event.title) {
+    // Titles usually read "{artist} at {venue}", so a separate artist line only
+    // adds information when the title does not already open with the name.
+    if (event.artist && !startsWithArtist(event.title, event.artist)) {
       el.appendChild(line("artist", event.artist));
     }
 
@@ -287,6 +288,10 @@
     }
 
     return el;
+  }
+
+  function startsWithArtist(title, artist) {
+    return String(title).toLowerCase().indexOf(String(artist).toLowerCase()) === 0;
   }
 
   function line(className, text) {
