@@ -87,10 +87,22 @@ class EventService:
                 failed.append(provider.name)
             else:
                 # Events from every provider are concatenated as-is. Cross-source
-                # dedup is deliberately out of scope: the same show carries a
-                # different id per source, and matching it needs fuzzy agreement
-                # on title, venue and start time (which themselves differ in
-                # spelling and precision between feeds).
+                # dedup is deliberately out of scope. Two cases look alike and
+                # must not be conflated:
+                #
+                #   Same show, several nights, one provider -> genuinely distinct
+                #   events with distinct ids (a residency at one venue). These
+                #   must NOT be merged; collapsing them hides real dates.
+                #
+                #   Same show, same night, two providers -> true duplicates, each
+                #   carrying that source's own id.
+                #
+                # The intended matching signal is external_ids: the same show
+                # usually shares a ticketmaster/seatgeek ticketing link across
+                # sources, so an overlapping seller URL is strong evidence.
+                # Artist + venue + start time is the fallback, and it is only a
+                # fallback because those differ in spelling and precision
+                # between feeds.
                 events.extend(result)
         return events, queried, failed
 
