@@ -1,0 +1,357 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Local Events</title>
+<style>
+  :root {
+    --accent: #1a56db;
+    --ink: #111111;
+    --muted: #6b7280;
+    --line: #e5e7eb;
+    --bg: #ffffff;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 32px 16px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                 Helvetica, Arial, sans-serif;
+    font-size: 16px;
+    line-height: 1.5;
+    color: var(--ink);
+    background: var(--bg);
+  }
+  .wrap { max-width: 700px; margin: 0 auto; }
+  h1 { font-size: 24px; margin: 0 0 24px; letter-spacing: -0.01em; }
+
+  form { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 32px; }
+  input, select, button {
+    font: inherit;
+    padding: 8px 16px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--bg);
+    color: var(--ink);
+  }
+  input { flex: 1 1 160px; min-width: 0; }
+  input:focus-visible, select:focus-visible, button:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  button {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #ffffff;
+    cursor: pointer;
+  }
+  button:disabled { opacity: 0.6; cursor: default; }
+
+  .msg { color: var(--muted); padding: 24px 0; }
+
+  .day {
+    font-size: 13px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    margin: 32px 0 8px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--line);
+  }
+  .day:first-child { margin-top: 0; }
+
+  .card { padding: 16px 0; }
+  .card + .card { border-top: 1px solid var(--line); }
+  .title { font-weight: 600; }
+  .artist, .venue { color: var(--muted); font-size: 15px; }
+  .time { font-variant-numeric: tabular-nums; }
+  .meta {
+    margin-top: 8px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 16px;
+    font-size: 15px;
+    color: var(--muted);
+  }
+
+  .tags { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 8px; }
+  .tag {
+    font-size: 12px;
+    color: var(--muted);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 0 8px;
+  }
+  a.tickets { color: var(--accent); text-decoration: none; }
+  a.tickets:hover { text-decoration: underline; }
+
+  @media (max-width: 600px) {
+    body { padding: 24px 16px; }
+    form { flex-direction: column; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Local Events</h1>
+
+  <form id="search-form">
+    <input id="postal-code" inputmode="numeric" pattern="\d{5}" maxlength="5"
+           required aria-label="Postal code" value="90012">
+    <select id="radius" aria-label="Search radius">
+      <option value="10">10 miles</option>
+      <option value="25" selected>25 miles</option>
+      <option value="50">50 miles</option>
+    </select>
+    <button type="submit">Search</button>
+  </form>
+
+  <!--
+    starts_at arrives from the API as UTC and is rendered here in the BROWSER's
+    local timezone. That equals the venue's local time only when the user is in
+    the same timezone as the venue: someone searching a Los Angeles postal code
+    from London sees these times in London time, not in Los Angeles time.
+  -->
+  <div id="results" aria-live="polite"></div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var results = document.getElementById("results");
+  var form = document.getElementById("search-form");
+  var postalInput = document.getElementById("postal-code");
+  var radiusSelect = document.getElementById("radius");
+  var button = form.querySelector("button");
+
+  // ---- state -------------------------------------------------------------
+
+  function setState(state, data) {
+    data = data || {};
+    results.innerHTML = "";
+    button.disabled = state === "loading";
+
+    if (state === "empty") {
+      results.appendChild(message("Enter a postal code to find events nearby."));
+    } else if (state === "loading") {
+      results.appendChild(message("Searching…"));
+    } else if (state === "results") {
+      results.appendChild(render(data.events));
+    } else if (state === "no-results") {
+      results.appendChild(message(
+        "No events found near " + data.postalCode + " — try a larger radius."
+      ));
+    } else if (state === "error") {
+      results.appendChild(message(
+        data.message || "Something went wrong. Please try again."
+      ));
+    }
+  }
+
+  function message(text) {
+    var p = document.createElement("p");
+    p.className = "msg";
+    p.textContent = text;
+    return p;
+  }
+
+  // ---- fetching ----------------------------------------------------------
+
+  async function search(postalCode, radiusMi) {
+    setState("loading");
+
+    var response;
+    try {
+      response = await fetch(
+        "/events?postal_code=" + encodeURIComponent(postalCode) +
+        "&radius_mi=" + encodeURIComponent(radiusMi)
+      );
+    } catch (err) {
+      setState("error", {
+        message: "Could not reach the server. Check your connection and try again."
+      });
+      return;
+    }
+
+    if (!response.ok) {
+      setState("error", {
+        message: response.status === 422
+          ? "That postal code does not look right. Enter 5 digits."
+          : "The server returned an error (" + response.status + "). Please try again."
+      });
+      return;
+    }
+
+    var data;
+    try {
+      data = await response.json();
+    } catch (err) {
+      setState("error", { message: "The server sent a response we could not read." });
+      return;
+    }
+
+    // A 200 does NOT mean success. When every provider fails, the API still
+    // answers 200 with events: [] and a populated sources_failed. Checking the
+    // status code alone would show "no events found" when the real problem is
+    // that the upstream source is down.
+    if (data.sources_failed && data.sources_failed.length > 0) {
+      setState("error", {
+        message: "Could not reach the event source right now. Please try again shortly."
+      });
+      return;
+    }
+
+    if (!data.events || data.events.length === 0) {
+      setState("no-results", { postalCode: postalCode });
+      return;
+    }
+
+    setState("results", data);
+  }
+
+  // ---- rendering ---------------------------------------------------------
+
+  function render(events) {
+    var fragment = document.createDocumentFragment();
+    var currentDay = null;
+
+    events.forEach(function (event) {
+      var start = new Date(event.starts_at);
+      var key = dayKey(start);
+
+      if (key !== currentDay) {
+        currentDay = key;
+        var header = document.createElement("div");
+        header.className = "day";
+        header.textContent = dayLabel(start);
+        fragment.appendChild(header);
+      }
+      fragment.appendChild(card(event, start));
+    });
+
+    return fragment;
+  }
+
+  function card(event, start) {
+    var el = document.createElement("div");
+    el.className = "card";
+
+    el.appendChild(line("title", event.title));
+
+    // Only adds information when it is not already spelled out in the title.
+    if (event.artist && event.artist !== event.title) {
+      el.appendChild(line("artist", event.artist));
+    }
+
+    var place = [event.venue_name, event.venue_city].filter(Boolean).join(", ");
+    if (place) {
+      el.appendChild(line("venue", place));
+    }
+
+    var meta = document.createElement("div");
+    meta.className = "meta";
+    meta.appendChild(span("time", formatTime(start)));
+
+    if (typeof event.distance_mi === "number") {
+      meta.appendChild(span("", event.distance_mi.toFixed(1) + " mi away"));
+    }
+
+    var price = formatPrice(event.price_min, event.price_max);
+    if (price) {
+      meta.appendChild(span("", price));
+    }
+
+    if (event.ticket_url) {
+      var link = document.createElement("a");
+      link.className = "tickets";
+      link.href = event.ticket_url;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.textContent = "Tickets";
+      meta.appendChild(link);
+    }
+    el.appendChild(meta);
+
+    if (event.genres && event.genres.length > 0) {
+      var tags = document.createElement("div");
+      tags.className = "tags";
+      event.genres.forEach(function (genre) {
+        tags.appendChild(span("tag", genre.replace(/-/g, " ")));
+      });
+      el.appendChild(tags);
+    }
+
+    return el;
+  }
+
+  function line(className, text) {
+    var div = document.createElement("div");
+    div.className = className;
+    div.textContent = text;
+    return div;
+  }
+
+  function span(className, text) {
+    var el = document.createElement("span");
+    if (className) {
+      el.className = className;
+    }
+    el.textContent = text;
+    return el;
+  }
+
+  // ---- formatting --------------------------------------------------------
+
+  function dayKey(date) {
+    return date.getFullYear() + "-" + date.getMonth() + "-" + date.getDate();
+  }
+
+  function dayLabel(date) {
+    var today = new Date();
+    var tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    if (dayKey(date) === dayKey(today)) {
+      return "Today";
+    }
+    if (dayKey(date) === dayKey(tomorrow)) {
+      return "Tomorrow";
+    }
+    return date.toLocaleDateString("en-US", {
+      weekday: "short", month: "short", day: "numeric"
+    });
+  }
+
+  function formatTime(date) {
+    return date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+  }
+
+  function formatPrice(min, max) {
+    if (typeof min !== "number") {
+      return "";
+    }
+    if (typeof max === "number" && max > min) {
+      return money(min) + "–" + money(max);
+    }
+    return money(min);
+  }
+
+  function money(value) {
+    return "$" + (Number.isInteger(value) ? value : value.toFixed(2));
+  }
+
+  // ---- wiring ------------------------------------------------------------
+
+  form.addEventListener("submit", function (submitEvent) {
+    submitEvent.preventDefault();
+    search(postalInput.value.trim(), radiusSelect.value);
+  });
+
+  setState("empty");
+})();
+</script>
+</body>
+</html>
