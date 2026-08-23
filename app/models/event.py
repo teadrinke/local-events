@@ -31,7 +31,7 @@ class Event(BaseModel):
     currency: str | None = None
     genres: list[str] = Field(default_factory=list)
     distance_mi: float | None = None  # filled by the service, not the provider
-    external_ids: dict[str, str] = Field(default_factory=dict)  # e.g. {"ticketmaster": "..."}
+    external_ids: dict[str, str] = Field(default_factory=dict)  # seller ticketing links
 
 
 class EventsResponse(BaseModel):
