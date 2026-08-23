@@ -26,3 +26,12 @@
   sources appears twice, once per source id. See the comment in
   `app/services/event_service.py` for the intended matching strategy and for why
   same-show-different-night events must not be merged.
+
+- **A total upstream failure still returns 200.** When every provider fails, `/events`
+  responds `200` with `events: []` and the failed provider named in `sources_failed`,
+  rather than a `502`. This follows from the service absorbing provider errors for
+  fan-out isolation: correct when 1 of 10 providers is down, misleading when the only
+  provider is down, since the response is otherwise indistinguishable from a genuine
+  zero-result search unless the client inspects `sources_failed`. The frontend uses
+  `sources_failed` to tell the two apart. A stricter version would return `502` when
+  `sources_failed` covers every provider queried.
