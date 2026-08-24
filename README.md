@@ -159,4 +159,4 @@ See NOTES.md.
 
 ## Time spent
 
-TODO — I'll fill this in.
+~2.5 hours of implementation, plus design work beforehand and this writeup afterward.
