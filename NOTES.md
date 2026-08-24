@@ -5,10 +5,11 @@
 - JamBase v3 rejects `postalCode` with a 400. Verified the geo filters against the
   live API rather than the docs: `geoLatitude`/`geoLongitude` + `geoRadiusAmount`
   works and the radius genuinely filters (5mi: 783, 25mi: 2,076, 100mi: 3,119 results
-  from the same origin). `geoCityId` and `geoMetroId` also work but need an ID lookup
-  and offer no radius control. So the user enters a ZIP and the provider resolves it
-  to coordinates via pgeocode. That resolution doubles as the origin for distance
-  calculation.
+  from the same origin). `geoCityId` and `geoMetroId` also work and return
+  area-scoped results (917 and 3,736 results respectively from the same area), but
+  each requires a separate ID lookup step first. So the user enters a ZIP and the
+  provider resolves it to coordinates via pgeocode. That resolution doubles as the
+  origin for distance calculation.
 
 - Provider failures are absorbed into `sources_failed` rather than raised, so one dead
   provider out of many doesn't fail the whole search. Unresolvable postal codes are
@@ -35,7 +36,9 @@
   fails at geocoding rather than at the API boundary.
 
 - The provider and the service each construct their own `pgeocode.Nominatim`, so the
-  ~2.8MB dataset is held twice in memory. A shared geocoding module would fix it.
+  GeoNames dataset is loaded twice. Its cached files (`US.txt`, `US-index.txt`) are
+  ~2.8MB each on disk; the in-memory footprint after pandas parsing is larger and was
+  not measured. A shared geocoding module would fix it.
 
 - `Event.artist` is a single field, but JamBase sometimes flags multiple rank-1
   co-headliners. The tie is broken deterministically by performer identifier, which
