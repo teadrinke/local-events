@@ -11,7 +11,7 @@ import pgeocode
 
 from app.core.config import settings
 from app.models.event import Event, EventQuery
-from app.providers.base import EventProvider, ProviderError
+from app.providers.base import EventProvider, LocationNotFoundError, ProviderError
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +65,9 @@ class JamBaseProvider(EventProvider):
         record = _geocoder().query_postal_code(postal_code.strip())
         lat, lon = record.get("latitude"), record.get("longitude")
         if lat is None or lon is None or isnan(float(lat)) or isnan(float(lon)):
-            raise ProviderError(f"could not resolve US postal code {postal_code!r}")
+            raise LocationNotFoundError(
+                f"could not resolve US postal code {postal_code!r}"
+            )
         return float(lat), float(lon)
 
     async def _get_events(

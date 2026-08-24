@@ -7,6 +7,13 @@ class ProviderError(Exception):
     """The only exception this layer raises. No httpx error may escape."""
 
 
+class LocationNotFoundError(ProviderError):
+    """The query location could not be resolved: bad input, not an outage.
+
+    Subclasses ProviderError so existing handlers keep catching it.
+    """
+
+
 class EventProvider(ABC):
     name: str
 

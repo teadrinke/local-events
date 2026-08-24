@@ -177,6 +177,16 @@
     }
 
     if (!response.ok) {
+      // 404 means the postal code is well formed but does not exist, which is
+      // a different problem from an upstream outage or an empty result set.
+      if (response.status === 404) {
+        setState("error", {
+          message: await detailOr(
+            response, "Postal code " + postalCode + " could not be found."
+          )
+        });
+        return;
+      }
       setState("error", {
         message: response.status === 422
           ? "That postal code does not look right. Enter 5 digits."
@@ -210,6 +220,15 @@
     }
 
     setState("results", data);
+  }
+
+  async function detailOr(response, fallback) {
+    try {
+      var body = await response.json();
+      return body && body.detail ? body.detail : fallback;
+    } catch (err) {
+      return fallback;
+    }
   }
 
   // ---- rendering ---------------------------------------------------------

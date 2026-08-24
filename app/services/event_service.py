@@ -8,7 +8,7 @@ from cachetools import TTLCache
 
 from app.core.config import settings
 from app.models.event import Event, EventQuery, EventsResponse
-from app.providers.base import EventProvider, ProviderError
+from app.providers.base import EventProvider, LocationNotFoundError, ProviderError
 from app.services.distance import Coordinate, DistanceCalculator
 
 logger = logging.getLogger(__name__)
@@ -76,6 +76,11 @@ class EventService:
         failed: list[str] = []
         for provider, result in zip(self._providers, results):
             queried.append(provider.name)
+            if isinstance(result, LocationNotFoundError):
+                # Bad input, not an outage: fan-out isolation must not mask it,
+                # or the caller sees "source unavailable" for a typo. Checked
+                # before ProviderError because it is a subclass of it.
+                raise result
             if isinstance(result, ProviderError):
                 logger.warning("provider %s failed: %s", provider.name, result)
                 failed.append(provider.name)

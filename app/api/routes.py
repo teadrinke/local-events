@@ -5,7 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from app.models.event import EventQuery, EventsResponse
-from app.providers.base import ProviderError
+from app.providers.base import LocationNotFoundError, ProviderError
 from app.services.event_service import EventService
 
 logger = logging.getLogger(__name__)
@@ -36,6 +36,14 @@ async def search_events(
     )
     try:
         return await service.search(query)
+    except LocationNotFoundError as exc:
+        # Checked before ProviderError, which it subclasses. A well-formed but
+        # non-existent postal code is bad input, not an upstream outage.
+        logger.info("unresolvable postal code %s: %s", postal_code, exc)
+        raise HTTPException(
+            status_code=404,
+            detail=f"Postal code {postal_code} could not be found.",
+        ) from exc
     except ProviderError as exc:
         # Log the upstream detail; hand the client a message with none of it.
         logger.error("event search failed: %s", exc)

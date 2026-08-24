@@ -35,3 +35,10 @@
   zero-result search unless the client inspects `sources_failed`. The frontend uses
   `sources_failed` to tell the two apart. A stricter version would return `502` when
   `sources_failed` covers every provider queried.
+
+- **`^\d{5}$` validates format, not existence.** The route's pattern only checks that
+  a postal code is five digits, so a well-formed but non-existent value such as `00000`
+  passes validation and is caught later, at geocoding, when pgeocode fails to resolve
+  it. That surfaces as `404` rather than the `422` a malformed value gets. Validating
+  existence up front would mean consulting the same GeoNames dataset the geocoder
+  already uses, so the check is left where the data lives.
