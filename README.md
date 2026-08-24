@@ -51,7 +51,7 @@ will reject a v3 key as invalid.
 pytest
 ```
 
-Tests run fully offline against a saved API response in
+11 tests, all offline. They run against a saved API response in
 `tests/fixtures/jambase_sample.json`. No API key or network access is required — HTTP
 and geocoding are both stubbed.
 
