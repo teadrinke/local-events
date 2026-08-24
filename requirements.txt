@@ -6,3 +6,4 @@ pydantic-settings
 cachetools
 pytest
 pgeocode
+pytest-asyncio
