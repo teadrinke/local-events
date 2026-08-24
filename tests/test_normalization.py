@@ -131,25 +131,14 @@ def test_headliner_selection(provider, raw_events):
 
 
 def test_headliner_tie_picks_best_rank(provider, raw_events):
-    # One fixture entry flags three performers as headliners, two of them
-    # sharing rank 1. Which of those two wins depends on the order the API
-    # sends them, so the guarantee worth asserting is narrower: the artist is
-    # always one of the best-ranked headliners, never a lower-ranked one.
-    source = next(
-        (raw for raw in raw_events
-         if sum(1 for p in raw.get("performer") or [] if p.get("x-isHeadliner")) > 1),
-        None,
-    )
-    if source is None:
-        pytest.skip("fixture has no event with multiple headliners")
+    # jambase:16348684 flags three headliners, two of them sharing rank 1:
+    #   rank 1  jambase:45790   Janelle Monae
+    #   rank 1  jambase:43207   John Legend
+    #   rank 2  jambase:249414  Raphael Saadiq
+    # The identifier breaks the rank-1 tie, so John Legend wins regardless of
+    # the order the API sends the performers in.
+    source = next(raw for raw in raw_events if raw["identifier"] == "jambase:16348684")
+    reversed_order = dict(source, performer=list(reversed(source["performer"])))
 
-    flagged = [p for p in source["performer"] if p.get("x-isHeadliner")]
-    best_rank = min(p["x-performanceRank"] for p in flagged)
-    best_names = {p["name"] for p in flagged if p["x-performanceRank"] == best_rank}
-    lower_names = {p["name"] for p in flagged if p["x-performanceRank"] > best_rank}
-    assert lower_names, "entry must have a lower-ranked headliner for this to mean anything"
-
-    artist = provider._to_event(source).artist
-
-    assert artist in best_names
-    assert artist not in lower_names
+    assert provider._to_event(source).artist == "John Legend"
+    assert provider._to_event(reversed_order).artist == "John Legend"

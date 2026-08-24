@@ -162,8 +162,10 @@ class JamBaseProvider(EventProvider):
 
         flagged = [p for p in performers if p.get("x-isHeadliner")]
         if flagged:
-            # Some events flag several headliners; lowest rank wins.
-            return min(flagged, key=rank)
+            # Some events flag several headliners, and several can share a rank.
+            # The identifier breaks the tie so the choice does not depend on the
+            # order the API happened to send the array in.
+            return min(flagged, key=lambda p: (rank(p), str(p.get("identifier") or "")))
         ranked = [p for p in performers if rank(p) == 1]
         return ranked[0] if ranked else None
 
