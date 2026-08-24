@@ -1,44 +1,63 @@
 # Notes
 
+## Design decisions
+
+- JamBase v3 rejects `postalCode` with a 400. Verified the geo filters against the
+  live API rather than the docs: `geoLatitude`/`geoLongitude` + `geoRadiusAmount`
+  works and the radius genuinely filters (5mi: 783, 25mi: 2,076, 100mi: 3,119 results
+  from the same origin). `geoCityId` and `geoMetroId` also work but need an ID lookup
+  and offer no radius control. So the user enters a ZIP and the provider resolves it
+  to coordinates via pgeocode. That resolution doubles as the origin for distance
+  calculation.
+
+- Provider failures are absorbed into `sources_failed` rather than raised, so one dead
+  provider out of many doesn't fail the whole search. Unresolvable postal codes are
+  excluded from that: `LocationNotFoundError` propagates to a 404, because bad input
+  isn't an upstream outage.
+
+- A malformed individual event is logged and skipped, not fatal. One bad record
+  shouldn't cost the user the other 39.
+
+- Canceled events are filtered out. A product decision, not a data limitation — a
+  stricter version would surface them with a status badge.
+
+- Cache maxsize is a module constant rather than a setting. Not every number needs to
+  be tunable.
+
 ## Known limitations
 
-- **Cached responses are shared and mutable.** `EventService` returns the cached
-  `EventsResponse` by reference, so a caller that mutates `response.events` corrupts
-  the cache entry for every subsequent hit until the TTL expires. Safe for the current
-  route, which only serializes the response.
+- Cached `EventsResponse` objects are returned by reference and are mutable; a caller
+  mutating `response.events` corrupts the cache entry until TTL expiry. Harmless for
+  the current route, which only serializes.
 
-- **pgeocode bypasses the injected HTTP client.** On first use it downloads a GeoNames
-  snapshot into a local cache (`~/.cache/pgeocode`), outside the shared
-  `httpx.AsyncClient`. That request has no timeout, no retry, and no `ProviderError`
-  translation, so a first run without network egress fails at geocoding rather than at
-  the API call. Subsequent runs are fully offline.
+- pgeocode downloads a GeoNames snapshot on first use, outside the injected httpx
+  client, so it has no timeout or retry handling. A first run on a restricted network
+  fails at geocoding rather than at the API boundary.
 
-- **Performer names can contain double-encoded UTF-8.** The API returns values such as
-  `"Janelle MonÃ¡e"`. These are passed through unmodified: a blind
-  `.encode('latin-1').decode('utf-8')` repair would mangle names that are legitimately
-  accented, so the raw value is preferred over a guess.
+- The provider and the service each construct their own `pgeocode.Nominatim`, so the
+  ~2.8MB dataset is held twice in memory. A shared geocoding module would fix it.
 
-- **Some events have date-only start times.** 4 of the 40 events in the sample response
-  carry a `startDate` of the form `2026-08-22` with no time component. These become
-  local midnight after timezone conversion rather than a real door time.
+- `Event.artist` is a single field, but JamBase sometimes flags multiple rank-1
+  co-headliners. The tie is broken deterministically by performer identifier, which
+  makes the choice stable but not meaningful. Representing it properly needs
+  `headliners: list[str]`.
 
-- **Cross-provider deduplication is not implemented.** The same show arriving from two
-  sources appears twice, once per source id. See the comment in
-  `app/services/event_service.py` for the intended matching strategy and for why
-  same-show-different-night events must not be merged.
+- Performer names can contain double-encoded UTF-8 from the API (e.g. "Janelle
+  MonÃ¡e"). Passed through unmodified — a naive repair mangles genuinely accented
+  names.
 
-- **A total upstream failure still returns 200.** When every provider fails, `/events`
-  responds `200` with `events: []` and the failed provider named in `sources_failed`,
-  rather than a `502`. This follows from the service absorbing provider errors for
-  fan-out isolation: correct when 1 of 10 providers is down, misleading when the only
-  provider is down, since the response is otherwise indistinguishable from a genuine
-  zero-result search unless the client inspects `sources_failed`. The frontend uses
-  `sources_failed` to tell the two apart. A stricter version would return `502` when
-  `sources_failed` covers every provider queried.
+- Some events have a date-only `startDate` with no time component. These are flagged
+  `time_tbd` and shown as "Time TBA" rather than midnight.
 
-- **`^\d{5}$` validates format, not existence.** The route's pattern only checks that
-  a postal code is five digits, so a well-formed but non-existent value such as `00000`
-  passes validation and is caught later, at geocoding, when pgeocode fails to resolve
-  it. That surfaces as `404` rather than the `422` a malformed value gets. Validating
-  existence up front would mean consulting the same GeoNames dataset the geocoder
-  already uses, so the check is left where the data lives.
+- `^\d{5}$` validates format, not existence, so a syntactically valid but nonexistent
+  postal code is caught at geocoding rather than at validation. It also matches
+  5-digit postal codes from other countries.
+
+- When every provider fails, `/events` returns 200 with `events: []` and the provider
+  in `sources_failed`, not a 502. Correct for fan-out isolation, misleading with a
+  single provider — the frontend uses `sources_failed` to tell the two apart.
+
+- US-only. International support needs a real geocoder behind the same resolution
+  step.
+
+- No cross-provider deduplication.
