@@ -25,7 +25,7 @@ cp .env.example .env
 uvicorn app.main:app --reload
 ```
 
-Add your JamBase API key to `.env` before starting the server — the app fails at
+Add your JamBase API key to `.env` before starting the server. The app fails at
 startup if it's missing, rather than at the first request.
 
 Then open http://127.0.0.1:8000
@@ -52,7 +52,7 @@ pytest
 ```
 
 11 tests, all offline. They run against a saved API response in
-`tests/fixtures/jambase_sample.json`. No API key or network access is required — HTTP
+`tests/fixtures/jambase_sample.json`. No API key or network access is required: HTTP
 and geocoding are both stubbed.
 
 ## API
@@ -62,10 +62,10 @@ and geocoding are both stubbed.
 | Param | Type | Default | Bounds |
 |---|---|---|---|
 | postal_code | string | required | 5 digits |
-| radius_mi | int | 25 | 1–100 |
+| radius_mi | int | 25 | 1-100 |
 | start_date | date | none | YYYY-MM-DD |
 | end_date | date | none | YYYY-MM-DD |
-| limit | int | 50 | 1–200 |
+| limit | int | 50 | 1-200 |
 
 Example:
 
@@ -111,17 +111,17 @@ precision; the frontend rounds it for display.
 
 `sources_queried` and `sources_failed` exist so a partial failure is visible to the
 client. With one provider `sources_failed` is always empty, but the shape doesn't
-change when providers are added — and the frontend uses it to distinguish "no events
+change when providers are added, and the frontend uses it to distinguish "no events
 here" from "the source is down", since both return 200 with an empty list.
 
 Status codes: 200 success, 404 postal code could not be resolved, 422 invalid
 parameters. A 502 is defined for an upstream provider error, but the service currently
-absorbs provider failures into `sources_failed`, so even a total outage returns 200 —
-see NOTES.md.
+absorbs provider failures into `sources_failed`, so even a total outage returns 200
+(see NOTES.md).
 
 ### GET /health
 
-Returns `{"status": "ok"}`. Shallow — confirms the app is running, does not check
+Returns `{"status": "ok"}`. Shallow: confirms the app is running, does not check
 JamBase reachability.
 
 ### GET /docs
@@ -151,7 +151,7 @@ Each package also carries an empty `__init__.py`.
 
 Dependencies point one direction: `models` imports nothing from the app, `providers`
 and `services` import `models`, `api` imports `services`. Adding a second event source
-means one new file in `providers/` and one line in `main.py` — nothing else changes.
+means one new file in `providers/` and one line in `main.py`; nothing else changes.
 
 ## Known limitations
 

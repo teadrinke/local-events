@@ -19,7 +19,7 @@
 - A malformed individual event is logged and skipped, not fatal. One bad record
   shouldn't cost the user the other 39.
 
-- Canceled events are filtered out. A product decision, not a data limitation — a
+- Canceled events are filtered out. A product decision, not a data limitation; a
   stricter version would surface them with a status badge.
 
 - Cache maxsize is a module constant rather than a setting. Not every number needs to
@@ -46,7 +46,7 @@
   `headliners: list[str]`.
 
 - Performer names can contain double-encoded UTF-8 from the API (e.g. "Janelle
-  MonÃ¡e"). Passed through unmodified — a naive repair mangles genuinely accented
+  MonÃ¡e"). Passed through unmodified: a naive repair mangles genuinely accented
   names.
 
 - Some events have a date-only `startDate` with no time component. These are flagged
@@ -58,7 +58,7 @@
 
 - When every provider fails, `/events` returns 200 with `events: []` and the provider
   in `sources_failed`, not a 502. Correct for fan-out isolation, misleading with a
-  single provider — the frontend uses `sources_failed` to tell the two apart.
+  single provider; the frontend uses `sources_failed` to tell the two apart.
 
 - US-only. International support needs a real geocoder behind the same resolution
   step.
