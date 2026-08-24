@@ -25,6 +25,30 @@
 - Cache maxsize is a module constant rather than a setting. Not every number needs to
   be tunable.
 
+- The provider and the service share one `pgeocode.Nominatim` from
+  `core/geocoding.py`, built lazily behind an `lru_cache(maxsize=1)` on the first
+  geocode. Two reasons for lazy over eager: constructing it downloads the GeoNames
+  dataset, and the service is constructed in the app lifespan, so an eager build turned
+  a failed download into a boot failure, with `/health` and `/docs` never coming up.
+  Sharing it also stops the dataset being loaded twice (cached files `US.txt` and
+  `US-index.txt`, ~2.7MB each on disk and ~5.4MB for the pair; the in-memory footprint
+  after pandas parsing is larger and was not measured).
+
+- The geocoder lives in `core/`, not in `providers/` or `services/`, because both of
+  them geocode: the provider resolves the query postal code, the service resolves the
+  same origin for distances. Putting it in either package would have made the other
+  import upwards. `GeocoderUnavailableError` sits in `core/errors.py` for the same
+  reason, and deliberately does not subclass `ProviderError`: no provider has failed.
+
+- A geocoder failure returns **503** from both call sites. It is re-raised out of the
+  provider fan-out rather than absorbed into `sources_failed`, on the same reasoning
+  as `LocationNotFoundError`: fan-out isolation exists to survive one provider dying,
+  and a missing postal-code dataset takes every provider down at once, so there is
+  nothing to isolate. Absorbing it would answer 200 for a search that could not have
+  run. 503 rather than the existing 502 keeps one meaning per code: 502 is the event
+  provider, 503 is the local postal-code dependency. The failure is not cached, so the
+  next request retries the download.
+
 ## Known limitations
 
 - Cached `EventsResponse` objects are returned by reference and are mutable; a caller
@@ -34,11 +58,6 @@
 - pgeocode downloads a GeoNames snapshot on first use, outside the injected httpx
   client, so it has no timeout or retry handling. A first run on a restricted network
   fails at geocoding rather than at the API boundary.
-
-- The provider and the service each construct their own `pgeocode.Nominatim`, so the
-  GeoNames dataset is loaded twice. Its cached files (`US.txt`, `US-index.txt`) are
-  ~2.8MB each on disk; the in-memory footprint after pandas parsing is larger and was
-  not measured. A shared geocoding module would fix it.
 
 - `Event.artist` is a single field, but JamBase sometimes flags multiple rank-1
   co-headliners. The tie is broken deterministically by performer identifier, which

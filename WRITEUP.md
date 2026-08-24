@@ -21,15 +21,23 @@ Four layers, with dependencies pointing one direction:
 
     routes → services → providers → models
 
-`models/` imports nothing from the app. `providers/` and `services/` import
-`models/`. Nothing under `app/services/` or `app/api/` references JamBase, and
-`main.py` is the only file that imports the provider. Config holds the
-vendor-named settings, as it should.
+and a `core/` underneath all four, importing nothing from the rest of the app:
+settings, the shared postal-code geocoder, and one error type.
+
+`models/` and `core/` import nothing from the app above them. `providers/` and
+`services/` import `models/` and `core/`. Nothing under `app/services/` or
+`app/api/` references JamBase, and `main.py` is the only file that imports the
+provider. Config holds the vendor-named settings, as it should. The geocoder is
+in `core/` for the same reason: both `providers/` and `services/` geocode, so
+putting it in either package would have made the other import upwards.
 
 One edge crosses that diagram deliberately: `routes/` imports the provider
 *error contract* from `providers/base.py`, because it is the layer that
 translates `ProviderError` and `LocationNotFoundError` into 502 and 404. It
-depends on the contract, never on a provider implementation.
+depends on the contract, never on a provider implementation. It translates one
+more, `GeocoderUnavailableError` from `core/errors.py`, into 503: a missing
+postal-code dataset is a local dependency failing, not the event provider, so it
+carries its own code.
 
 The design centers on one idea: **every JamBase-specific detail is trapped
 inside `providers/jambase.py`**: its parameter names, its nested JSON, its
@@ -106,8 +114,6 @@ and telling them apart requires reading `sources_failed`, not the status code.
 
 ## What I'd change with more time
 
-- A shared `geocoding.py`. The provider and the service each construct their
-  own `pgeocode.Nominatim`, loading the same dataset twice.
 - `headliners: list[str]`. JamBase sometimes flags multiple rank-1
   co-headliners; a single `artist` field structurally cannot represent that.
   The tie is currently broken by performer identifier, which is stable but
@@ -117,6 +123,14 @@ and telling them apart requires reading `sources_failed`, not the status code.
   side is close to free and is the most obvious product win available.
 - Cross-provider deduplication, and international support behind the same
   location-resolution seam.
+
+One item that was on this list has since been done: a shared `geocoding.py`. The
+provider and the service each constructed their own `pgeocode.Nominatim`, loading
+the same dataset twice, and the service built it in `__init__`, which runs inside
+the FastAPI lifespan, so a failed GeoNames download took the whole app down at
+startup with a raw urllib traceback. Both call sites now share one lazily built
+geocoder in `core/geocoding.py`. It lives in `core/` because a geocoder in either
+`providers/` or `services/` would have made the other package import upwards.
 
 ## How I used AI
 
@@ -140,6 +154,24 @@ store the offer URL, or parse partner IDs per seller, with a recommendation
 against the parsing as brittle. I chose seller links. The decision was mine;
 what the tool contributed was noticing the field could not mean what its name
 implied.
+
+## How the setup instructions were validated
+
+The Windows setup path was worked through on a real Windows machine rather than
+written from memory, and two lines in the README came back from that. `Activate.ps1`
+fails with `CouldNotAutoLoadModule` when it is called without a `.\` prefix,
+because PowerShell does not search the current directory for commands. The venv is
+created with `py` rather than `python`, because a bare `python` can resolve to the
+Microsoft Store app execution alias instead of a real interpreter. Both lines read
+the way they do because the obvious form was run first and did not work.
+
+AI-generated changes to this repo were reviewed rather than accepted as given.
+Three worth naming. The README claimed the app fails at startup when the JamBase
+key is missing, which is false for an empty string, and `.env.example` ships the
+variable empty. It claimed the GeoNames dataset downloaded on the first search
+when the code was downloading it during startup. And a proposed refactor would
+have broken all 11 tests by patching a module attribute that the same refactor
+had removed. Each was caught on review and corrected.
 
 ## Something AI got wrong that I corrected
 
@@ -218,8 +250,11 @@ UI degrades silently rather than rendering gaps.
 ## Self-assessment
 
 **Code quality: B+.** Layering is clean and enforced, errors are typed and
-translated at boundaries, and the tests run offline in under a second. Points
-off for the duplicated geocoder instances and for a cached response that is
+translated at boundaries, and the tests run offline in under a second. The
+duplicated geocoder instances that this grade docked marks for are resolved:
+one lazily built geocoder in `core/`, loaded on first use rather than at
+startup, so the dataset is parsed once and a failed download costs a request
+instead of the process. The point still standing is the cached response that is
 returned by reference and mutable: harmless with the current route, but a
 latent trap.
 

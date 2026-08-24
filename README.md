@@ -3,17 +3,25 @@
 Search for upcoming live music events near a US postal code. FastAPI backend over the
 JamBase v3 Data API, with a vanilla JavaScript frontend served from the same app.
 
+Requires Python 3.10 or newer.
+
 ## Setup
 
 Windows (PowerShell):
 
 ```powershell
-python -m venv venv
-venv\Scripts\Activate.ps1
+py -3 -m venv venv
+.\venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 copy .env.example .env
 uvicorn app.main:app --reload
 ```
+
+The `.\` prefix is required: PowerShell does not search the current directory for
+commands, so the bare path fails with `CouldNotAutoLoadModule`. `py -3` is the Windows
+Python launcher pinned to Python 3: a bare `python` can resolve to the Microsoft Store
+app execution alias, which is not a usable interpreter, and a bare `py` follows
+whatever default `py.ini` or `PY_PYTHON` sets.
 
 macOS / Linux:
 
@@ -26,15 +34,21 @@ uvicorn app.main:app --reload
 ```
 
 Add your JamBase API key to `.env` before starting the server. The app fails at
-startup if it's missing, rather than at the first request.
+startup if `JAMBASE_API_KEY` is absent from the environment entirely. An empty value
+passes that check, and `.env.example` ships it empty, so a `.env` copied but not
+filled in starts cleanly and fails at the first search with a 401 from JamBase.
 
 Then open http://127.0.0.1:8000
 
 Note: the first search downloads a GeoNames postal-code dataset via pgeocode and
-caches it locally (about 5.4MB on disk once extracted, in `~/.cache/pgeocode`). That
-request is separate from the JamBase call and doesn't go through the app's HTTP
-client, so the first run needs general network access. Subsequent runs work from the
-cache.
+caches it locally as `US.txt` and `US-index.txt`, about 2.7MB each and 5.4MB for the
+pair, in `~/.cache/pgeocode` (override with `PGEOCODE_DATA_DIR`). That request is
+separate from the JamBase call and doesn't go through the app's HTTP client, so the
+first run needs general network access. Subsequent runs work from the cache.
+
+Startup itself never touches the network. The dataset is loaded on the first geocode,
+not during app startup, so a failed download costs that one search and nothing else:
+`/health` and `/docs` still come up.
 
 ## API key
 
@@ -115,9 +129,14 @@ change when providers are added, and the frontend uses it to distinguish "no eve
 here" from "the source is down", since both return 200 with an empty list.
 
 Status codes: 200 success, 404 postal code could not be resolved, 422 invalid
-parameters. A 502 is defined for an upstream provider error, but the service currently
-absorbs provider failures into `sources_failed`, so even a total outage returns 200
-(see NOTES.md).
+parameters, 503 the postal-code dataset could not be loaded. The 503 is returned
+whichever call site hit the failure first, the provider resolving the query or the
+service resolving the distance origin, because it is the same geocoder and the same
+outage; the failure is not cached, so a retry is worth making.
+
+A 502 is defined for an upstream provider error but is not reachable in practice: the
+service absorbs provider failures into `sources_failed`, so even a total outage returns
+200 (see NOTES.md).
 
 ### GET /health
 
@@ -134,6 +153,8 @@ Interactive OpenAPI documentation.
 app/
   main.py                     app wiring; the only file that names JamBase
   core/config.py              settings from .env, validated at startup
+  core/errors.py              GeocoderUnavailableError
+  core/geocoding.py           shared lazy postal-code geocoder
   models/event.py             EventQuery, Event, EventsResponse
   providers/base.py           EventProvider contract + error types
   providers/jambase.py        JamBase v3 client and normalization
@@ -147,11 +168,15 @@ tests/
   test_service.py             orchestration tests
 ```
 
-Each package also carries an empty `__init__.py`.
+Each package also carries an `__init__.py`. All are empty except the top-level
+`app/__init__.py`, which holds the Python version check.
 
-Dependencies point one direction: `models` imports nothing from the app, `providers`
-and `services` import `models`, `api` imports `services`. Adding a second event source
-means one new file in `providers/` and one line in `main.py`; nothing else changes.
+Dependencies point one direction: `models` and `core` import nothing from the rest of
+the app, `providers` and `services` import `models` and `core`, `api` imports
+`services`. The geocoder sits in `core` because both `providers` and `services`
+geocode; putting it in either one would have made the other import upwards. Adding a
+second event source means one new file in `providers/` and one line in `main.py`;
+nothing else changes.
 
 ## Known limitations
 

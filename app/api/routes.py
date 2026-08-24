@@ -4,6 +4,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
+from app.core.errors import GeocoderUnavailableError
 from app.models.event import EventQuery, EventsResponse
 from app.providers.base import LocationNotFoundError, ProviderError
 from app.services.event_service import EventService
@@ -36,6 +37,15 @@ async def search_events(
     )
     try:
         return await service.search(query)
+    except GeocoderUnavailableError as exc:
+        # Local dependency, not the event provider: the postal-code dataset
+        # could not be loaded, so no search could have run. Kept distinct from
+        # the 502 so each code keeps one meaning. Not cached, so a retry is
+        # genuinely worth making.
+        logger.error("geocoder unavailable: %s", exc)
+        raise HTTPException(
+            status_code=503, detail="Postal code lookup is temporarily unavailable."
+        ) from exc
     except LocationNotFoundError as exc:
         # Checked before ProviderError, which it subclasses. A well-formed but
         # non-existent postal code is bad input, not an upstream outage.

@@ -3,10 +3,11 @@ import logging
 from math import isnan
 from typing import Any
 
-import pgeocode
 from cachetools import TTLCache
 
 from app.core.config import settings
+from app.core.errors import GeocoderUnavailableError
+from app.core.geocoding import geocoder
 from app.models.event import Event, EventQuery, EventsResponse
 from app.providers.base import EventProvider, LocationNotFoundError, ProviderError
 from app.services.distance import Coordinate, DistanceCalculator
@@ -30,7 +31,6 @@ class EventService:
             if cache is not None
             else TTLCache(maxsize=CACHE_MAXSIZE, ttl=settings.cache_ttl_s)
         )
-        self._geocoder = pgeocode.Nominatim("us")
 
     async def search(self, query: EventQuery) -> EventsResponse:
         key = self._cache_key(query)
@@ -76,6 +76,14 @@ class EventService:
         failed: list[str] = []
         for provider, result in zip(self._providers, results):
             queried.append(provider.name)
+            if isinstance(result, GeocoderUnavailableError):
+                # Not this provider's outage: the postal-code dataset is
+                # unavailable to every provider at once, so there is nothing
+                # for fan-out isolation to isolate. Re-raised so the failure
+                # gets one status code no matter which call site hit it first;
+                # absorbing it here would answer 200 for a search that could
+                # never have worked.
+                raise result
             if isinstance(result, LocationNotFoundError):
                 # Bad input, not an outage: fan-out isolation must not mask it,
                 # or the caller sees "source unavailable" for a typo. Checked
@@ -129,7 +137,9 @@ class EventService:
             event.distance_mi = result.miles if result else None
 
     def _resolve_origin(self, postal_code: str) -> Coordinate | None:
-        record = self._geocoder.query_postal_code(postal_code.strip())
+        # Resolved at the point of use, not in __init__: constructing the
+        # geocoder downloads a dataset, and __init__ runs in the app lifespan.
+        record = geocoder().query_postal_code(postal_code.strip())
         lat, lon = record.get("latitude"), record.get("longitude")
         if lat is None or lon is None or isnan(float(lat)) or isnan(float(lon)):
             return None

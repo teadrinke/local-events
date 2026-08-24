@@ -1,15 +1,14 @@
 import asyncio
 import logging
 from datetime import datetime, timezone
-from functools import lru_cache
 from math import isnan
 from typing import Any
 from zoneinfo import ZoneInfo
 
 import httpx
-import pgeocode
 
 from app.core.config import settings
+from app.core.geocoding import geocoder
 from app.models.event import Event, EventQuery
 from app.providers.base import EventProvider, LocationNotFoundError, ProviderError
 
@@ -17,15 +16,6 @@ logger = logging.getLogger(__name__)
 
 MAX_RETRIES = 2
 BACKOFF_S = 0.25
-
-
-@lru_cache(maxsize=1)
-def _geocoder() -> pgeocode.Nominatim:
-    # pgeocode resolves postal codes against a GeoNames snapshot downloaded once
-    # into a local cache, then works fully offline from that copy. The snapshot is
-    # only as fresh as the installed pgeocode release, so very new or recently
-    # reassigned postal codes may not resolve.
-    return pgeocode.Nominatim("us")
 
 
 class JamBaseProvider(EventProvider):
@@ -62,7 +52,7 @@ class JamBaseProvider(EventProvider):
         return events
 
     def _resolve_postal_code(self, postal_code: str) -> tuple[float, float]:
-        record = _geocoder().query_postal_code(postal_code.strip())
+        record = geocoder().query_postal_code(postal_code.strip())
         lat, lon = record.get("latitude"), record.get("longitude")
         if lat is None or lon is None or isnan(float(lat)) or isnan(float(lon)):
             raise LocationNotFoundError(

@@ -2,6 +2,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
+from app.core import geocoding
 from app.models.event import Event, EventQuery
 from app.providers.base import EventProvider, LocationNotFoundError, ProviderError
 from app.services.distance import HaversineCalculator
@@ -44,18 +45,23 @@ class FailingProvider(EventProvider):
 def offline_geocoder(monkeypatch):
     """Keep the suite offline.
 
-    EventService builds a pgeocode.Nominatim in __init__, which downloads a
-    GeoNames snapshot the first time it runs on a machine. These tests stub
-    _resolve_origin anyway, so the real geocoder is never needed.
+    The shared geocoder builds a pgeocode.Nominatim on first use, which
+    downloads a GeoNames snapshot the first time it runs on a machine. These
+    tests stub _resolve_origin anyway, so the real geocoder is never needed;
+    this is the backstop that proves it. The lru_cache is cleared on both
+    sides so no stub leaks out and no real instance leaks in.
     """
 
     class Unused:
         def query_postal_code(self, postal_code):
             raise AssertionError("the geocoder should not be reached in tests")
 
+    geocoding.geocoder.cache_clear()
     monkeypatch.setattr(
-        "app.services.event_service.pgeocode.Nominatim", lambda country: Unused()
+        "app.core.geocoding.pgeocode.Nominatim", lambda country: Unused()
     )
+    yield
+    geocoding.geocoder.cache_clear()
 
 
 def build_service(providers: list[EventProvider]) -> EventService:
