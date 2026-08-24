@@ -22,7 +22,14 @@ Four layers, with dependencies pointing one direction:
     routes → services → providers → models
 
 `models/` imports nothing from the app. `providers/` and `services/` import
-`models/`. `main.py` is the only file that names JamBase.
+`models/`. Nothing under `app/services/` or `app/api/` references JamBase, and
+`main.py` is the only file that imports the provider. Config holds the
+vendor-named settings, as it should.
+
+One edge crosses that diagram deliberately: `routes/` imports the provider
+*error contract* from `providers/base.py`, because it is the layer that
+translates `ProviderError` and `LocationNotFoundError` into 502 and 404. It
+depends on the contract, never on a provider implementation.
 
 The design centers on one idea: **every JamBase-specific detail is trapped
 inside `providers/jambase.py`** — its parameter names, its nested JSON, its
@@ -123,9 +130,20 @@ The most useful pattern was asking it to check my assumptions instead of
 implementing them. Before writing the normalization code I told it to survey
 the saved fixture and report where the actual data differed from my spec.
 
+A related pattern was surfacing ambiguity rather than resolving it silently.
+`external_ids` is keyed by seller, but nothing in the API supplies a
+partner-side ID — the only identifiers available are JamBase's own, and the
+real Ticketmaster ID exists only inside an affiliate URL's query string. Told
+to build the field, it implemented the defensible version, flagged that the
+value was ambiguous for a field with that name, and laid out the options:
+store the offer URL, or parse partner IDs per seller, with a recommendation
+against the parsing as brittle. I chose seller links. The decision was mine;
+what the tool contributed was noticing the field could not mean what its name
+implied.
+
 ## Something AI got wrong that I corrected
 
-Three examples, deliberately including one where it was right and I wasn't.
+Two examples, deliberately including one where it was right and I wasn't.
 
 **Corrected.** Early on it guessed a base URL, called it, received a
 well-formed 403, and concluded the URL was correct — reasoning that the host
@@ -135,11 +153,6 @@ key belonged to the latter. The failure mode is worth naming — *a plausible
 error from the wrong service reads exactly like a validated one*. I confirmed
 the base URL against the vendor's documentation instead of inferring it from
 response shape.
-
-**Corrected.** It proposed parsing partner IDs out of affiliate ticketing
-URLs to populate `external_ids`. The parsing was per-seller and brittle for
-marginal value; I redefined the field to hold seller links instead, which is
-honest about what it contains and still serves as the dedup signal.
 
 **Accepted.** My field-mapping spec was written from a skim of the API
 response, and it found five places the spec contradicted the data — most
